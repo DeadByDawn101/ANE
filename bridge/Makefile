@@ -1,17 +1,25 @@
-CC = xcrun clang
-CFLAGS = -O2 -Wall -Wno-deprecated-declarations -fobjc-arc -fPIC
-FRAMEWORKS = -framework Foundation -framework IOSurface -ldl
-TARGET = libane_bridge.dylib
+# ANE Bridge — builds libane_bridge.dylib
+# Requires: Apple Silicon Mac, Xcode Command Line Tools
 
-all: $(TARGET)
+CC      = clang
+CFLAGS  = -O2 -arch arm64
+OBJCFLAGS = $(CFLAGS) -fobjc-arc
+FRAMEWORKS = -framework Foundation -framework CoreML
 
-$(TARGET): ane_bridge.m ane_bridge.h
-	$(CC) $(CFLAGS) -dynamiclib -o $@ ane_bridge.m $(FRAMEWORKS)
+SRCS    = ane_bridge.m ane_memory.m ane_dmabuf.m
+HEADERS = ane_bridge.h
+OUTPUT  = libane_bridge.dylib
 
-test: test_bridge.m ane_bridge.h $(TARGET)
-	$(CC) $(CFLAGS) -o test_bridge test_bridge.m -L. -lane_bridge $(FRAMEWORKS)
+.PHONY: all clean
+
+all: $(OUTPUT)
+
+$(OUTPUT): $(SRCS) $(HEADERS)
+	$(CC) $(OBJCFLAGS) $(FRAMEWORKS) \
+		-dynamiclib \
+		-install_name @rpath/$(OUTPUT) \
+		-o $(OUTPUT) $(SRCS)
+	@echo "Built: $(OUTPUT)"
 
 clean:
-	rm -f $(TARGET) test_bridge
-
-.PHONY: all clean test
+	rm -f $(OUTPUT) *.o
