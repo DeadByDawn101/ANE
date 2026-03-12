@@ -29,7 +29,7 @@ class ANEWorkRequest:
     output_ptr: Optional[int] = None
     input_size: int = 0
     output_size: int = 0
-    wr_id: int = 0                       # user-defined ID (like ib_wr_id)
+    wr_id: Optional[int] = None              # user-defined ID (like ib_wr_id)
     callback: Optional[Callable] = None  # called on completion
 
 
@@ -119,7 +119,7 @@ class ANEQueuePair:
         """
         with self._lock:
             self._wr_counter += 1
-            wr_id = wr.wr_id or self._wr_counter
+            wr_id = wr.wr_id if wr.wr_id is not None else self._wr_counter
             self._submitted += 1
             self._exec_count += 1
 

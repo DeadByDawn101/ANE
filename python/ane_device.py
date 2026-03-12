@@ -13,9 +13,14 @@ from typing import Optional
 _BRIDGE_PATH = os.path.join(os.path.dirname(__file__), "..", "bridge", "libane_bridge.dylib")
 
 def _load_bridge() -> Optional[ctypes.CDLL]:
+    if platform.system() != "Darwin":
+        return None  # dylib is macOS/ARM64 only
     path = os.path.abspath(_BRIDGE_PATH)
     if os.path.exists(path):
-        return ctypes.CDLL(path)
+        try:
+            return ctypes.CDLL(path)
+        except OSError:
+            return None
     return None
 
 _lib = _load_bridge()

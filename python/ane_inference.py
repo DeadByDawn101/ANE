@@ -74,13 +74,19 @@ class ANEInference:
         self._qp = ANEQueuePair(cq=self._cq, lib=self._load_bridge())
 
     def _load_bridge(self):
+        import platform
+        if platform.system() != "Darwin":
+            return None  # dylib is macOS/ARM64 only
         bridge_path = os.path.join(
             os.path.dirname(__file__), "..", "bridge", "libane_bridge.dylib"
         )
         bridge_path = os.path.abspath(bridge_path)
         if os.path.exists(bridge_path):
-            import ctypes
-            return ctypes.CDLL(bridge_path)
+            try:
+                import ctypes
+                return ctypes.CDLL(bridge_path)
+            except OSError:
+                return None
         return None
 
     def _can_run_on_ane(self, model: str) -> bool:
