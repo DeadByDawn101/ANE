@@ -224,41 +224,100 @@ def _serve(host: str, port: int, engine: ANEInference):
         def log_message(self, format, *args):
             pass  # suppress default logging
 
+        def _send_json(self, data: dict, code: int = 200):
+            resp = json.dumps(data).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", len(resp))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(resp)
+
+        def do_OPTIONS(self):
+            """CORS preflight — allow the Vite dev server at any port."""
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.end_headers()
+
         def do_POST(self):
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+
             if self.path == "/generate":
-                length = int(self.headers.get("Content-Length", 0))
-                body = json.loads(self.rfile.read(length))
                 result = engine.generate(
                     prompt=body.get("prompt", ""),
                     model=body.get("model", "qwen3-0.6b"),
                     max_tokens=body.get("max_tokens", 256),
                     temperature=body.get("temperature", 0.7),
                 )
-                resp = json.dumps({
+                self._send_json({
                     "text": result.text,
                     "backend": result.backend,
                     "model": result.model,
                     "elapsed_ms": result.elapsed_ms,
                     "tokens": result.tokens,
                     "error": result.error,
-                }).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", len(resp))
-                self.end_headers()
-                self.wfile.write(resp)
+                })
+
+            elif self.path == "/prompt-enhance":
+                # Use ANE (or Anthropic fallback) to rewrite a ComfyUI prompt.
+                # Returns an enriched prompt with lighting, style, and detail cues.
+                raw_prompt = body.get("prompt", "")
+                style = body.get("style", "photorealistic")
+                enhance_prompt = (
+                    f"Rewrite the following image generation prompt to be more detailed and vivid "
+                    f"for a {style} style. Add specific lighting, mood, composition, and detail cues. "
+                    f"Keep it under 120 words. Return ONLY the improved prompt, no explanation.\n\n"
+                    f"Original: {raw_prompt}"
+                )
+                result = engine.generate(
+                    prompt=enhance_prompt,
+                    model="qwen3-0.6b",
+                    max_tokens=160,
+                    temperature=0.6,
+                )
+                self._send_json({
+                    "enhanced": result.text.strip(),
+                    "original": raw_prompt,
+                    "backend": result.backend,
+                    "elapsed_ms": result.elapsed_ms,
+                    "error": result.error,
+                })
+
             else:
                 self.send_response(404)
                 self.end_headers()
 
         def do_GET(self):
             if self.path == "/health":
-                resp = b'{"status":"ok"}'
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", len(resp))
+                self._send_json({"status": "ok"})
+
+            elif self.path == "/status":
+                # Device info — consumed by useANE.js on connect
+                dev = engine.device
+                info = {
+                    "status": "ok",
+                    "device": str(dev) if dev else "simulation",
+                    "chip": getattr(dev, "chip", "unknown"),
+                    "ne_cores": getattr(dev, "ne_cores", 16),
+                    "ne_tops": getattr(dev, "ne_tops", 38),
+                    "ram_gb": getattr(dev, "ram_gb", None),
+                    "macos": getattr(dev, "macos_version", None),
+                    "ane_capable_models": list(_ANE_CAPABLE_MODELS),
+                }
+                self._send_json(info)
+
+            elif self.path == "/models":
+                self._send_json({
+                    "models": list(_MODEL_REGISTRY.keys()),
+                    "ane_capable": list(_ANE_CAPABLE_MODELS),
+                })
+
+            else:
+                self.send_response(404)
                 self.end_headers()
-                self.wfile.write(resp)
 
     server = HTTPServer((host, port), Handler)
     print(f"[ANEInference] Server running on http://{host}:{port}")
